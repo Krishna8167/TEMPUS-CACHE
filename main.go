@@ -183,6 +183,65 @@ func NewCache(ttl time.Duration) *Cache {
 
 */
 
+/*
+
+	Background Eviction Workflow.
+
+	- Expired Keys are removed only on Get
+	- That's lazy eviction
+
+	ADDING : - Active Eviction ..
+
+	Eviction strategy (Choosen):
+
+	- time.Ticker
+	- Fixed interval(eg: every 2 seconds)
+
+	to: predictable, Simple , production-friendly
+
+*/
+
+func (c *Cache) startEviction(interval time.Duration) {
+
+	ticker := time.NewTicker(interval)
+
+	go func() {
+		//The eviction loop runs in a separate goroutine
+		// This will prevent blocking the main application
+		// Once started, It runs independently for the lifetime of the program (or until stopped).
+
+		for range ticker.C {
+
+			// C - channel ; C <-chan Time (Everytime the ticker fires, that delievers a value at that time).
+			now := time.Now()
+
+			c.mu.Lock()
+
+			for key, item := range c.data {
+				if now.After(item.ExpiryTime) {
+					delete(c.data, key)
+				}
+			}
+
+			c.mu.Unlock()
+		}
+	}()
+}
+
+/*
+
+This function starts a background eviction routine that periodically removes expired entries from the cache.
+	A time.Ticker triggers at the given interval, and each tick runs in a separate goroutine so it doesn’t block the main program.
+	On every tick, the cache is locked for thread safety, the current time is compared against each item’s ExpiryTime, and any expired entries are deleted before unlocking the cache again.
+
+	IN BRIEF:
+	It ensures automatic, thread-safe cleanup of expired cache items at regular intervals.
+
+*/
+/*
+
+for: v1.0.0 : For CRUD Ops with Cache memory
+
 func main() {
 	cache := NewCache(5 * time.Second)
 
@@ -197,4 +256,25 @@ func main() {
 	if _, ok := cache.Get("name"); !ok {
 		fmt.Println("Expired")
 	}
+}
+
+*/
+
+func main() {
+	cache := NewCache(5 * time.Second)
+
+	cache.startEviction(2 * time.Second)
+
+	cache.Set("name", "krishna")
+
+	time.Sleep(6 * time.Second)
+
+	if _, ok := cache.Get("name"); !ok {
+		fmt.Println("Expired (Cleaned by eviction workflow)")
+	}
+
+	cache.Set("age", 24)
+	time.Sleep(3 * time.Second)
+	cache.Set("city", "Bangalore")
+
 }
