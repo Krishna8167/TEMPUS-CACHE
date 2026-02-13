@@ -113,6 +113,63 @@ func WithCleanupInterval(d time.Duration) Option {
 	}
 }
 
+/*
+WithMaxEntries configures the maximum number of entries
+allowed in the cache before LRU eviction is triggered.
+
+================================================================================
+PARAMETER
+================================================================================
+
+n (int):
+    Maximum number of entries permitted in the cache.
+
+================================================================================
+BEHAVIOR
+================================================================================
+
+If n > 0:
+    - The cache enforces a hard capacity limit.
+    - When inserting a new key and the limit is reached:
+        → The least recently used (LRU) entry is evicted.
+        → Eviction statistics are incremented.
+
+If n <= 0:
+    - The cache operates without capacity restriction.
+    - No LRU-based eviction will occur due to size constraints.
+
+================================================================================
+EVICTION STRATEGY
+================================================================================
+
+TempusCache uses a strict LRU (Least Recently Used) policy:
+
+- Most recently accessed entries move to the front.
+- Least recently used entries remain at the back.
+- The back element is evicted first when capacity is exceeded.
+
+Eviction occurs in O(1) time due to the doubly linked list design.
+
+================================================================================
+SYSTEM DESIGN CONSIDERATION
+================================================================================
+
+Setting a maximum entry limit allows:
+
+- Predictable memory usage
+- Protection against unbounded growth
+- Stable performance under heavy load
+
+Capacity tuning should consider:
+
+- Available memory
+- Average item size
+- Expected workload characteristics
+- TTL distribution
+
+This option enables bounded, production-ready cache behavior.
+*/
+
 func WithMaxEntries(n int) Option {
 	return func(c *Cache) {
 		c.maxEntries = n

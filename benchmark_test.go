@@ -7,47 +7,53 @@ import (
 )
 
 /*
-BenchmarkSet measures the performance of the Set() operation.
+BenchmarkSet measures the performance of the Set() operation
+under repeated overwrites of the same key.
 
-PURPOSE
+================================================================================
+OBJECTIVE
+================================================================================
 
-Benchmarks are used to evaluate:
-- Execution time per operation (ns/op)
-- Memory allocations (when run with -benchmem)
-- Throughput under repeated execution
+This benchmark evaluates the steady-state cost of:
 
-This benchmark focuses specifically on measuring the cost of:
+- Expiration timestamp calculation (time.Now + ttl)
+- Mutex Lock()/Unlock() overhead
+- Map update (existing key path)
+- LRU move-to-front operation
 
-1. Expiration timestamp calculation
-2. Mutex Lock()/Unlock() overhead
-3. Map write operation
-4. Struct assignment
+================================================================================
+BENCHMARK MODEL
+================================================================================
 
-HOW GO BENCHMARKS WORK
+- The same key is repeatedly overwritten.
+- Map size remains constant.
+- No eviction pressure.
+- Minimal memory growth.
 
-The testing framework dynamically determines b.N,
-the number of iterations required to produce stable results.
+This isolates the hot write path without structural expansion effects.
 
-The loop:
+================================================================================
+GO BENCHMARK MECHANICS
+================================================================================
 
-    for i := 0; i < b.N; i++
+The testing framework dynamically determines b.N
+to achieve stable timing results.
 
-is automatically scaled by the Go runtime to measure
-accurate per-operation performance.
+Use:
 
-WHAT THIS BENCHMARK REPRESENTS
+    go test -bench=. -benchmem
 
-- Ideal scenario where the same key is overwritten repeatedly.
-- Map size does not grow significantly.
-- Measures core write-path performance.
+to observe:
+- ns/op
+- B/op
+- allocs/op
 
-For more realistic benchmarks, variations could include:
-- Using unique keys (map growth behavior)
-- Parallel benchmarking (mutex contention testing)
-- Measuring allocations using: go test -bench=. -benchmem
+================================================================================
+INTERPRETATION
+================================================================================
 
-This benchmark provides insight into the raw performance
-characteristics of the cache’s write operation.
+This benchmark reflects ideal write throughput
+in a stable cache state.
 */
 
 func BenchmarkSet(b *testing.B) {
@@ -58,6 +64,36 @@ func BenchmarkSet(b *testing.B) {
 	}
 }
 
+/*
+BenchmarkSetUnique measures write performance
+when inserting unique keys.
+
+================================================================================
+OBJECTIVE
+================================================================================
+
+Unlike BenchmarkSet, this benchmark:
+
+- Forces map growth.
+- Exercises LRU insert path.
+- Tests capacity-bound behavior.
+
+With WithMaxEntries(b.N + 1),
+evictions are avoided to measure pure growth cost.
+
+================================================================================
+WHAT IT CAPTURES
+================================================================================
+
+- Map allocation behavior
+- Linked list node allocation
+- Memory growth impact
+- Lock overhead under expanding state
+
+This benchmark represents a more realistic
+write-heavy workload scenario.
+*/
+
 func BenchmarkSetUnique(b *testing.B) {
 	cache := New(WithMaxEntries(b.N + 1))
 
@@ -65,6 +101,32 @@ func BenchmarkSetUnique(b *testing.B) {
 		cache.Set(fmt.Sprintf("key%d", i), i, 0)
 	}
 }
+
+/*
+BenchmarkGet measures the performance of the read path.
+
+================================================================================
+OBJECTIVE
+================================================================================
+
+Evaluates the cost of:
+
+- Map lookup
+- Expiration check
+- LRU move-to-front operation
+- Mutex overhead
+- Stats increment
+
+================================================================================
+SCENARIO
+================================================================================
+
+- A single key is preloaded.
+- Repeated Get() calls simulate high read locality.
+- No expiration or eviction occurs.
+
+This benchmark reflects hot-cache read performance.
+*/
 
 func BenchmarkGet(b *testing.B) {
 	cache := New()
@@ -76,6 +138,38 @@ func BenchmarkGet(b *testing.B) {
 		cache.Get("key")
 	}
 }
+
+/*
+BenchmarkParallelGet measures read performance
+under concurrent access.
+
+================================================================================
+OBJECTIVE
+================================================================================
+
+Simulates high-concurrency read workloads
+using b.RunParallel.
+
+Evaluates:
+
+- Lock contention behavior
+- Throughput scaling across CPU cores
+- Stability under parallel goroutines
+
+================================================================================
+WHY THIS MATTERS
+================================================================================
+
+Caches are typically read-heavy systems.
+Understanding concurrent read scalability
+is critical for backend performance analysis.
+
+Run with:
+
+    go test -bench=. -cpu=1,2,4,8
+
+to observe scaling behavior.
+*/
 
 func BenchmarkParallelGet(b *testing.B) {
 	cache := New()
@@ -89,6 +183,37 @@ func BenchmarkParallelGet(b *testing.B) {
 		}
 	})
 }
+
+/*
+BenchmarkEviction measures write performance
+under constant eviction pressure.
+
+================================================================================
+SCENARIO
+================================================================================
+
+- Cache capacity is limited (WithMaxEntries(100)).
+- Continuous unique inserts exceed capacity.
+- LRU eviction is triggered repeatedly.
+
+================================================================================
+WHAT IT EVALUATES
+================================================================================
+
+- O(1) eviction behavior
+- removeElement() efficiency
+- Map delete performance
+- List removal cost
+- Stats increment overhead
+
+================================================================================
+SYSTEM INSIGHT
+================================================================================
+
+This benchmark reflects memory-bounded
+production scenarios where eviction
+is part of the steady-state workload.
+*/
 
 func BenchmarkEviction(b *testing.B) {
 	cache := New(WithMaxEntries(100))

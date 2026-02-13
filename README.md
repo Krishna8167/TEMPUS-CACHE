@@ -1,5 +1,5 @@
-TempusCache
-===========
+##  TempusCache
+
 <p align="center">
   <img 
     src="https://github.com/user-attachments/assets/0a2442e4-f640-43fb-a2a9-b8d219d1ae51" 
@@ -8,103 +8,103 @@ TempusCache
   />
 </p>
 
-[](https://golang.org/)
+> A high-performance, concurrent in-memory cache for Go with TTL, LRU eviction, capacity limits, and dual expiration strategy.
 
-[](https://golang.org/)
+TempusCache is a lightweight, thread-safe caching engine designed for backend systems that require:
 
-[](LICENSE)
+- Low-latency access  
+- Predictable memory bounds  
+- Time-based lifecycle control  
+- Safe concurrent usage  
 
-> A concurrent, in-memory key-value cache for Go with per-key TTL and optional background expiration.
+It combines **O(1) lookup**, **LRU eviction**, and **per-key TTL** in a clean, extensible architecture.
 
-TempusCache is a lightweight, thread-safe caching library designed for backend services that require low-latency storage with time-based lifecycle control.
+---
 
-It provides:
+#  Features
 
--   Deterministic behavior
+-  Thread-safe read/write operations  
+-  Per-entry TTL support  
+-  LRU eviction policy  
+-  Configurable maximum capacity  
+-  Never returns stale data (lazy expiration)  
+-  Optional background cleanup worker  
+-  Runtime statistics (hits, misses, evictions)  
+-  Functional configuration model  
+-  Race-condition safe (`go test -race`)  
+-  Benchmark-tested performance  
 
--   Predictable performance
+---
 
--   Safe concurrent access
-
--   Explicit lifecycle management
-
--   Clean, extensible architecture
-
-* * * * *
-
-✨ Features
-----------
-
--   ✅ Thread-safe read/write operations
-
--   ⏳ Per-entry TTL support
-
--   🚫 Never returns stale data (lazy expiration)
-
--   🧹 Optional background cleanup worker
-
--   ⚙️ Functional configuration model
-
--   🧪 Race-condition safe (`go test -race`)
-
--   📊 Benchmark-tested
-
--   🔌 Extensible (eviction policies planned)
-
-* * * * *
-
-📦 Installation
----------------
+ Installation
+===============
 
 `go get github.com/yourusername/tempuscache`
 
+ Quick Start
+==============
+
+Import
+------
+
+`import "github.com/yourusername/tempuscache"`
+
+> Only use `/v2` if you have tagged a v2 release.
+
 * * * * *
 
-🚀 Quick Start
---------------
-
-### Import
-
-`import "github.com/yourusername/tempuscache/v2"`
-
-### Create Cache
+Create Cache
+------------
 
 `cache := tempuscache.New(
     tempuscache.WithCleanupInterval(10 * time.Second),
+    tempuscache.WithMaxEntries(1000),
 )`
 
-If no cleanup interval is provided, the cache operates using **lazy expiration only**.
+-   If no cleanup interval is provided → lazy expiration only
+-   If no max entries are provided → unbounded growth
 
 * * * * *
 
-### Set Value
+Set Value
+---------
 
-`cache.Set("user:1", "Krish", 5*time.Second)`
+`cache.Set("user:1", "Krishna", 5*time.Second)`
 
 -   `ttl > 0` → expires after duration
-
 -   `ttl == 0` → never expires
 
 * * * * *
 
-### Get Value
+Get Value
+---------
 
 `value, found := cache.Get("user:1")
 if found {
     fmt.Println(value)
 }`
 
-Expired entries are removed automatically and treated as cache misses.
+Expired entries are automatically removed and treated as cache misses.
 
 * * * * *
 
-### Delete Value
+Delete Value
+------------
 
 `cache.Delete("user:1")`
 
 * * * * *
 
-### Graceful Shutdown
+Retrieve Stats
+--------------
+
+`stats := cache.Stats()
+fmt.Println(stats.Hits, stats.Misses, stats.Evictions)`
+
+* * * * *
+
+Graceful Shutdown
+-----------------
 
 `cache.Stop()`
 
@@ -112,103 +112,113 @@ Stops the background cleanup goroutine (if configured).
 
 * * * * *
 
-🏗 Architecture
----------------
+ Architecture
+===============
 
-| Component | Responsibility |
-| --- | --- |
-| `cache.go` | Core storage & concurrency control |
-| `item.go` | TTL metadata & expiration logic |
-| `janitor.go` | Background cleanup worker |
-| `options.go` | Functional configuration pattern |
-| `eviction.go` | Reserved for future eviction strategies |
-| `*_test.go` | Validation & concurrency testing |
-| `benchmark_test.go` | Performance measurement |
+TempusCache combines two core data structures:
+
+|     Component             |       Purpose          |
+| ------------------------- | ---------------------- |
+| `map[string]*list.Element`| O(1) key lookup        |
+| `*list.List`              | Maintains LRU ordering |
+| `sync.RWMutex`            | Concurrency control    |
+| Background Janitor        | Active expiration      |
+
+### Storage Model
+
+`Map (key → list element)
+        ↓
+Doubly Linked List (LRU ordering)
+        ↓
+Item { key, value, expiration }`
+
+This hybrid structure ensures:
+
+-   O(1) lookup
+-   O(1) eviction
+-   O(1) recency updates
 
 * * * * *
 
-⏱ Expiration Strategy
----------------------
+ Expiration Strategy
+=====================
 
 TempusCache implements a **dual expiration model**.
 
-### Lazy Expiration (Always Enabled)
+Lazy Expiration (Always Enabled)
+--------------------------------
 
 -   Checked during `Get()`
-
 -   Expired entries are removed immediately
-
 -   Guarantees stale data is never returned
 
-### Active Expiration (Optional)
+Active Expiration (Optional)
+----------------------------
 
 -   Configurable cleanup interval
-
 -   Background goroutine scans and deletes expired entries
-
 -   Prevents memory retention of unused keys
 
-If cleanup is disabled, lazy expiration alone ensures correctness.
+If cleanup is disabled, lazy expiration alone guarantees correctness.
 
 * * * * *
 
-🔒 Concurrency Model
---------------------
+ Concurrency Model
+====================
 
-The internal map is protected using `sync.RWMutex`.
+The cache uses `sync.RWMutex`:
 
--   `RLock()` → reads
+-   `Lock()` → writes & internal mutations
+-   `RLock()` → read-only access
 
--   `Lock()` → writes & cleanup
+Guarantees:
 
-Benefits:
-
--   Concurrent reads
-
+-   No concurrent map write panic
 -   No race conditions
+-   Safe multi-goroutine access
 
--   No concurrent map write panics
+Verified using:
 
--   Verified with `go test -race`
+`go test -race ./...`
 
 * * * * *
 
-⚙️ Configuration (Functional Options Pattern)
----------------------------------------------
+ Configuration (Functional Options)
+=====================================
 
 `cache := tempuscache.New(
     tempuscache.WithCleanupInterval(5 * time.Second),
+    tempuscache.WithMaxEntries(500),
 )`
 
 ### Why Functional Options?
 
 -   Stable constructor signature
-
 -   Explicit configuration
-
--   Easy future extensibility
-
+-   Extensible design
 -   Clean API surface
 
 * * * * *
 
-📈 Performance
---------------
+ Performance
+==============
 
-| Operation | Complexity |
-| --- | --- |
-| Set | O(1) |
-| Get | O(1) |
-| Delete | O(1) |
-| Cleanup Cycle | O(n) |
+| Operation    | Complexity  |
+| ------------ | ------------|
+| Set          |        O(1) |
+| Get          |        O(1) |
+| Delete       |        O(1) |
+| LRU Eviction |        O(1) |
+| Cleanup Cycle|        O(n) |
 
-Cleanup cycles perform full map scans.\
+Cleanup performs a full scan during active expiration.
+
 For moderate workloads, performance remains predictable and efficient.
 
 * * * * *
 
-🧪 Testing & Benchmarking
--------------------------
+ Testing & Benchmarking
+=========================
 
 Run tests:
 
@@ -230,98 +240,144 @@ Benchmarks report:
 
 -   `allocs/op`
 
-* * * * *
-
-🧠 Design Decisions
--------------------
-
-### Expiration Stored as `int64` (UnixNano)
-
--   Faster numeric comparison
-
--   Lower overhead than `time.Time`
-
--   Cache-friendly representation
-
--   Reduced memory footprint
-
-### `RWMutex` over `Mutex`
-
--   Optimized for read-heavy workloads
-
--   Concurrent readers allowed
-
--   Safe writes
-
-### Dual Expiration Model
-
--   Lazy expiration → correctness
-
--   Active expiration → memory hygiene
+Parallel benchmarks simulate concurrent read workloads.
 
 * * * * *
 
-🛣 Roadmap
-----------
-
-Planned enhancements:
-
--   LRU eviction policy
-
--   Capacity-based eviction
-
--   Sharded locking to reduce contention
-
--   Metrics tracking (hits, misses, evictions)
-
--   Observability hooks
-
--   Prometheus integration
-
-* * * * *
-
-🎯 Use Cases
-------------
+ Use Cases
+============
 
 -   API response caching
-
--   Authentication/session storage
-
+-   Session/token storage
 -   Rate limiting metadata
-
--   Temporary computation caching
-
--   Microservice in-memory storage layer
+-   In-memory microservice cache layer
+-   Temporary computation results
 
 * * * * *
 
-🛠 Development
---------------
+ Roadmap
+==========
 
-`go test ./...
-go test -race ./...
-go test -bench=. -benchmem`
+Future enhancements:
 
-* * * * *
-
-📄 License
-----------
-
-MIT License
+-   Sharded locking (reduced contention)
+-   Pluggable eviction strategies
+-   Prometheus metrics exporter
+-   Context-aware operations
+-   Distributed cache mode
 
 * * * * *
 
-Philosophy
-----------
+ Design Philosophy
+====================
 
 TempusCache is intentionally:
 
 -   Minimal
-
--   Transparent
-
+-   Predictable
 -   Idiomatic Go
-
 -   Concurrency-safe
+-   Performance-aware
 
--   Built for predictable backend performance
+It is built to demonstrate **backend systems engineering principles**, not just simple key-value storage.
+
+* * * * *
+
+ License
+==========
+
+MIT License
+
+ `---
+If you want next level polish, I can now:
+
+- Add GitHub badges (Go version, CI, License)
+- Add benchmark result table
+- Write a strong "Resume Project Description"
+- Help you tag v1.0.0 properly
+
+Now this project actually looks serious.`
+
+from installation to graceful shutdown in markdown file format
+
+Here is the section from **Installation → Graceful Shutdown**, properly formatted in Markdown so you can directly paste it into your `README.md`.
+
+* * * * *
+
+`#  Installation
+
+```bash
+go get github.com/yourusername/tempuscache `
+
+* * * * *
+
+ Quick Start
+==============
+
+Import
+------
+
+`import "github.com/yourusername/tempuscache"`
+
+> Only use `/v2` if you have tagged a v2 release.
+
+* * * * *
+
+Create Cache
+------------
+
+`cache := tempuscache.New(
+    tempuscache.WithCleanupInterval(10 * time.Second),
+    tempuscache.WithMaxEntries(1000),
+)`
+
+-   If no cleanup interval is provided → lazy expiration only
+
+-   If no max entries are provided → unbounded growth
+
+* * * * *
+
+Set Value
+---------
+
+`cache.Set("user:1", "Krish", 5*time.Second)`
+
+-   `ttl > 0` → expires after duration
+
+-   `ttl == 0` → never expires
+
+* * * * *
+
+Get Value
+---------
+
+`value, found := cache.Get("user:1")
+if found {
+    fmt.Println(value)
+}`
+
+Expired entries are automatically removed and treated as cache misses.
+
+* * * * *
+
+Delete Value
+------------
+
+`cache.Delete("user:1")`
+
+* * * * *
+
+Retrieve Stats
+--------------
+
+`stats := cache.Stats()
+fmt.Println(stats.Hits, stats.Misses, stats.Evictions)`
+
+* * * * *
+
+Graceful Shutdown
+-----------------
+
+`cache.Stop()`
+
+Stops the background cleanup goroutine (if configured).
